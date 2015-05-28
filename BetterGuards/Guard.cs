@@ -55,7 +55,7 @@ namespace BetterGuards
             }
         }
 
-        public bool TargetInRangeAndSight(Vessel v)
+        public bool TargetInRange(Vessel v)
         {
             var sqrDistance = (transform.position - v.transform.position).sqrMagnitude;
 
@@ -69,7 +69,7 @@ namespace BetterGuards
 
             foreach (var v in FlightGlobals.Vessels)
             {
-                if (v.loaded && TargetInRangeAndSight(v))
+                if (v.loaded && TargetInRange(v))
                 {
                     targets.Add(v);
                 }
