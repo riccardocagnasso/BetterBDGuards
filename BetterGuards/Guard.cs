@@ -65,6 +65,7 @@ namespace BetterGuards
         public IEnumerable<Vessel> FindTargets()
         {
             Debug.Log("Finding Targets");
+
             var targets = new List<Vessel>();
 
             foreach (var v in FlightGlobals.Vessels)
