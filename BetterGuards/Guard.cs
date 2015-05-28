@@ -75,7 +75,6 @@ namespace BetterGuards
                 }
             }
 
-
             return targets;
         }
     }
