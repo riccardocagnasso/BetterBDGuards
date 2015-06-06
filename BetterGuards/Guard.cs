@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using BahaTurret;
-using KSPAchievements;
+﻿using BahaTurret;
 using UnityEngine;
 
 namespace BetterGuards
@@ -10,8 +6,8 @@ namespace BetterGuards
     class Guard : ManagerBase
     {
         [KSPField(guiActiveEditor = true, isPersistant = true, guiActive = true, guiName = "Scan Interval"),
-            UI_FloatRange(minValue = 1f, maxValue = 60f, stepIncrement = 1f, scene = UI_Scene.All)]
-        public float TargetScanInterval = 8;
+            UI_FloatRange(minValue = 0.1f, maxValue = 6f, stepIncrement = 0.1f, scene = UI_Scene.All)]
+        public float TargetScanInterval = 0.3f;
 
         [KSPField(guiActiveEditor = true, isPersistant = true, guiActive = true, guiName = "Guard Max Range"),
             UI_FloatRange(minValue = 100f, maxValue = 8000f, stepIncrement = 100f, scene = UI_Scene.All)]
@@ -22,23 +18,66 @@ namespace BetterGuards
         public float GuardMinRange = 0f;
 
         [KSPField(guiActiveEditor = true, isPersistant = true, guiActive = true, guiName = "Guard: "),
-            UI_Toggle(disabledText = "Enabled", enabledText = "Disabled")]
+            UI_Toggle(disabledText = "Disabled", enabledText = "Enabled")]
         public bool Enabled = false;
+
+        [KSPField(guiActiveEditor = true, isPersistant = true, guiActive = true, guiName = "Target Missiles: "),
+            UI_Toggle]
+        public bool TargetMissiles = true;
+
+        [KSPField(guiActiveEditor = true, isPersistant = true, guiActive = true, guiName = "Target Aircrafts: "),
+            UI_Toggle]
+        public bool TargetAircrafts = false;
+
+        [KSPField(guiActiveEditor = true, isPersistant = true, guiActive = true, guiName = "Target Vehicles: "),
+            UI_Toggle]
+        public bool TargetVehicles = false;
+
+        public float NextScan = 0f;
+
+        private bool _oldEnabled = false;
+
+        private Targets _targets;
+        public Targets TargetsList {
+            get { return _targets; }
+            set
+            {
+                Debug.Log("Setting external target list");
+                if (_targets == null)
+                {
+                    Debug.Log("Yep, was null");
+                    _targets = value;
+                }
+                
+            }
+        }
 
         public override void OnStart(PartModule.StartState state)
         {
-            base.OnStart(state);
-
             part.force_activate();
+
+            if (TargetsList == null)
+            {
+                TargetsList = new Targets(vessel);
+
+                foreach (var otherGuard in vessel.FindPartModulesImplementing<Guard>())
+                {
+                    otherGuard.TargetsList = TargetsList;
+                }
+            }
         }
 
         public override void OnUpdate()
         {
-            base.OnUpdate();
-
-            if (HighLogic.LoadedSceneIsFlight && vessel.IsControllable && Enabled)
+            if (HighLogic.LoadedSceneIsGame && vessel.IsControllable)
             {
-                Debug.Log("1 On Guard Update");
+                if (Enabled != _oldEnabled)
+                {
+                    Debug.Log("Enabled change");
+                    _oldEnabled = Enabled;
+
+                    ToggleTurrets(Enabled);
+                }
             }
         }
 
@@ -46,36 +85,67 @@ namespace BetterGuards
         {
             base.OnFixedUpdate();
 
-            if (Enabled)
+            if (!Enabled) return;
+            if (Time.time <= NextScan)
             {
-                Debug.Log("On Guard Fixed Update");
-                var targets = FindTargets();
-
-                Debug.Log(targets);
+                return;
             }
-        }
 
-        public bool TargetInRange(Vessel v)
-        {
-            var sqrDistance = (transform.position - v.transform.position).sqrMagnitude;
+            Debug.Log("Scan for Targets");
+            TargetsList.MaybeRefreshTargets(TargetScanInterval);
 
-            return sqrDistance <= Math.Pow(GuardMaxRange, 2) && sqrDistance >= Math.Pow(GuardMinRange, 2);
-        }
+            var target = TargetsList.PickTarget(GuardMinRange, GuardMaxRange, TargetMissiles, TargetAircrafts, TargetVehicles);
 
-        public IEnumerable<Vessel> FindTargets()
-        {
-            Debug.Log("Finding Targets");
-            var targets = new List<Vessel>();
+            Debug.Log("SelectedTarget " + target);
 
-            foreach (var v in FlightGlobals.Vessels)
+            foreach (var turret in vessel.FindPartModulesImplementing<BahaTurret.BahaTurret>())
             {
-                if (v.loaded && TargetInRange(v))
+                FireTurret(turret, target);
+            }
+
+            foreach (var missile in vessel.FindPartModulesImplementing<MissileLauncher>())
+            {
+                missile.FireMissileOnTarget(target);
+            }
+
+            NextScan = Time.time + TargetScanInterval;
+            Debug.Log("Nextime: " + NextScan);
+        }
+
+        #region fire
+
+        public void FireTurret(BahaTurret.BahaTurret turret, Vessel target)
+        {
+           
+            if (target)
+            {
+                Debug.Log("Firing turret " + turret.name + " at target " + target.name);
+                turret.autoFireTarget = target;
+                turret.autoFireTimer = Time.time;
+                turret.autoFireLength = TargetScanInterval;
+            }
+            else
+            {
+                Debug.Log("No target, no fire");
+                turret.autoFireTarget = null;
+                turret.autoFire = false;
+            }
+
+        }
+
+        public void ToggleTurrets(bool enabled = true)
+        {
+            Debug.Log("Toggle turrets: " + enabled);
+            foreach (var turret in vessel.FindPartModulesImplementing<BahaTurret.BahaTurret>()) 
+            {
+                if (turret.turretEnabled != enabled)
                 {
-                    targets.Add(v);
+                    turret.toggle();
                 }
+                turret.guardMode = enabled;
             }
-
-            return targets;
         }
+
+        #endregion
     }
 }
