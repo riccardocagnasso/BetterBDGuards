@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Reflection;
 using UnityEngine;
 using BahaTurret;
 
@@ -11,21 +12,29 @@ namespace BetterGuards
         public SortedDictionary<float, Vessel> Aircrafts = new SortedDictionary<float, Vessel>();
         public SortedDictionary<float, Vessel> Vehicles = new SortedDictionary<float, Vessel>();
 
+        public Dictionary<Guid, MissileLauncher> MissileOnTarget = new Dictionary<Guid, MissileLauncher>(); 
+
         public Vessel Vessel;
 
-        public float MaxRange = 8000; //todo: calculate this
+        public float MaxRange = 0;
 
         private float _lastScan = 0f;
 
         public Targets(Vessel v)
         {
+            Debug.Log("Create Targets");
             Vessel = v;
         }
 
-        public void MaybeRefreshTargets(float scanInterval)
+        public void MaybeRefreshTargets(Guard guard)
         {
             Debug.Log("Maybe Refresh Targets");
-            if (Time.time >= _lastScan + scanInterval)
+            if (guard.GuardMaxRange > MaxRange)
+            {
+                MaxRange = guard.GuardMaxRange;
+            }
+
+            if (Time.time >= _lastScan + guard.TargetScanInterval)
             {
                 RefreshTargets();
                 _lastScan = Time.time;
@@ -41,6 +50,7 @@ namespace BetterGuards
 
         public void HandleTarget(Vessel v)
         {
+            //todo: handle same distance
             Debug.Log("Is a target?");
             foreach (var missile in v.FindPartModulesImplementing<MissileLauncher>())
             {
@@ -136,13 +146,13 @@ namespace BetterGuards
         }
 
         public Vessel PickTarget(float minRange = 0, float maxRange = 8000, bool missiles = true, bool aircrafts = true,
-            bool vehicles = true)
+            bool vehicles = true, bool notEngaged = false)
         {
             Debug.Log("Picking Target");
             if (missiles)
             {
-                var missile = PickInRange(Missiles, minRange, maxRange);
-                if (missile)
+                var missile = PickInRange(Missiles, minRange, maxRange, notEngaged);
+                if (missile != null)
                 {
                     return missile;
                 }
@@ -150,8 +160,8 @@ namespace BetterGuards
 
             if (aircrafts)
             {
-                var aircraft = PickInRange(Aircrafts, minRange, maxRange);
-                if (aircraft)
+                var aircraft = PickInRange(Aircrafts, minRange, maxRange, notEngaged);
+                if (aircraft != null)
                 {
                     return aircraft;
                 }
@@ -159,8 +169,8 @@ namespace BetterGuards
 
             if (vehicles)
             {
-                var vehicle = PickInRange(Vehicles, minRange, maxRange);
-                if (vehicle)
+                var vehicle = PickInRange(Vehicles, minRange, maxRange, notEngaged);
+                if (vehicle != null)
                 {
                     return vehicle;
                 }
@@ -169,7 +179,7 @@ namespace BetterGuards
             return null;
         }
 
-        public Vessel PickInRange(SortedDictionary<float, Vessel> vessels, float minRange, float maxRange)
+        public Vessel PickInRange(SortedDictionary<float, Vessel> vessels, float minRange, float maxRange, bool notEngaged=false)
         {
             Debug.Log("Pick in range");
             Debug.Log("MinRange: " + minRange);
@@ -182,15 +192,44 @@ namespace BetterGuards
                 }
                 else if (v.Key > Math.Pow(maxRange, 2))
                 {
-                    return null;
+                     return null;
                 }
                 else
                 {
-                    return v.Value;
+                    if (!notEngaged)
+                    {
+                        return v.Value;
+                    }
+                    Debug.Log("Looking for not engaged target");
+                    if (!MissileOnTarget.ContainsKey(v.Value.id))
+                    {
+                        return v.Value;
+                    }
+                    Debug.Log("Seems engaged, is still the missile alive?");
+                    var missileOnTarget = MissileOnTarget[v.Value.id];
+
+                    //todo: complain with misyer BD to make this (everything) public
+                    /*var miss = (bool)typeof(MissileGuidance).GetField("checkMiss", BindingFlags.NonPublic | BindingFlags.Instance)
+                        .GetValue(missileOnTarget);
+                    Debug.Log(miss);
+                    if (miss)
+                    {
+                        Debug.Log("Missile missed, go another");
+                        MissileOnTarget.Remove(v.Value.id);
+                        return v.Value;
+                    }*/
                 }
             }
 
             return null;
+        }
+
+        public void ReportMissileOnTarget(Vessel target, MissileLauncher missile)
+        {
+            Debug.Log("Missile reported on target");
+            MissileOnTarget.Add(target.id, missile);
+
+            missile.part.OnJustAboutToBeDestroyed += () => MissileOnTarget.Remove(target.id);
         }
     }
 }

@@ -1,4 +1,6 @@
-﻿using BahaTurret;
+﻿using System;
+using System.Linq;
+using BahaTurret;
 using UnityEngine;
 
 namespace BetterGuards
@@ -42,7 +44,7 @@ namespace BetterGuards
             get { return _targets; }
             set
             {
-                Debug.Log("Setting external target list");
+                //Logger.Log("Setting external target list");
                 if (_targets == null)
                 {
                     Debug.Log("Yep, was null");
@@ -91,8 +93,27 @@ namespace BetterGuards
                 return;
             }
 
+            try
+            {
+                DoGuardJob();
+            }
+            catch (Exception e)
+            {
+                Debug.Log(e.StackTrace);
+                NextScan = Time.time + TargetScanInterval;
+                Debug.Log("Nextime: " + NextScan);
+                throw;
+            }
+
+            NextScan = Time.time + TargetScanInterval;
+            Debug.Log("Nextime: " + NextScan);
+        }
+
+
+        public void DoGuardJob()
+        {
             Debug.Log("Scan for Targets");
-            TargetsList.MaybeRefreshTargets(TargetScanInterval);
+            TargetsList.MaybeRefreshTargets(this);
 
             var target = TargetsList.PickTarget(GuardMinRange, GuardMaxRange, TargetMissiles, TargetAircrafts, TargetVehicles);
 
@@ -103,13 +124,18 @@ namespace BetterGuards
                 FireTurret(turret, target);
             }
 
-            foreach (var missile in vessel.FindPartModulesImplementing<MissileLauncher>())
+            var firstMissile = vessel.FindPartModulesImplementing<MissileLauncher>().FirstOrDefault();
+            if (firstMissile != null)
             {
-                missile.FireMissileOnTarget(target);
+                target = TargetsList.PickTarget(GuardMinRange, GuardMaxRange, TargetMissiles, TargetAircrafts,
+                    TargetVehicles, notEngaged: true);
+                if (target != null)
+                {
+                    Debug.Log("Fire Missile on target: " + target);
+                    firstMissile.FireMissileOnTarget(target);
+                    TargetsList.ReportMissileOnTarget(target, firstMissile);
+                }
             }
-
-            NextScan = Time.time + TargetScanInterval;
-            Debug.Log("Nextime: " + NextScan);
         }
 
         #region fire
@@ -117,7 +143,7 @@ namespace BetterGuards
         public void FireTurret(BahaTurret.BahaTurret turret, Vessel target)
         {
            
-            if (target)
+            if (target != null)
             {
                 Debug.Log("Firing turret " + turret.name + " at target " + target.name);
                 turret.autoFireTarget = target;
