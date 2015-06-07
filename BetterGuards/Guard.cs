@@ -1,4 +1,23 @@
-﻿using System;
+﻿/*
+ * DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE 
+ *                   Version 2, December 2004 
+ *
+ * Copyright (C) 2004 Sam Hocevar <sam@hocevar.net> 
+ *
+ * Everyone is permitted to copy and distribute verbatim or modified 
+ * copies of this license document, and changing it is allowed as long 
+ * as the name is changed. 
+ *
+ *           DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE 
+ *  TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION 
+ *
+ * 0. You just DO WHAT THE FUCK YOU WANT TO.
+ * 
+ * Copyright © 2015 Riccardo Cagnasso <riccardo@phascode.org>
+ */
+
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using BahaTurret;
 using UnityEngine;
@@ -10,6 +29,8 @@ namespace BetterGuards
         [KSPField(guiActiveEditor = true, isPersistant = true, guiActive = true, guiName = "Scan Interval"),
             UI_FloatRange(minValue = 0.1f, maxValue = 6f, stepIncrement = 0.1f, scene = UI_Scene.All)]
         public float TargetScanInterval = 0.3f;
+
+        public float EditorScanInterval = 1f;
 
         [KSPField(guiActiveEditor = true, isPersistant = true, guiActive = true, guiName = "Guard Max Range"),
             UI_FloatRange(minValue = 100f, maxValue = 8000f, stepIncrement = 100f, scene = UI_Scene.All)]
@@ -56,22 +77,60 @@ namespace BetterGuards
 
         public override void OnStart(PartModule.StartState state)
         {
-            part.force_activate();
-
-            if (TargetsList == null)
+            try
             {
-                TargetsList = new Targets(vessel);
-
-                foreach (var otherGuard in vessel.FindPartModulesImplementing<Guard>())
+                part.force_activate();
+                if (HighLogic.LoadedSceneIsFlight)
                 {
-                    otherGuard.TargetsList = TargetsList;
+                    if (TargetsList == null)
+                    {
+                        TargetsList = new Targets(vessel);
+
+                        foreach (var otherGuard in vessel.FindPartModulesImplementing<Guard>())
+                        {
+                            otherGuard.TargetsList = TargetsList;
+                        }
+                    }
                 }
             }
+            catch (Exception e)
+            {
+                Debug.Log(e.StackTrace);
+                throw;
+            }
+        }
+
+        public void Update()
+        {
+            /*
+             * wtf? 
+             */
+
+            try
+            {
+                if (Time.time <= NextScan)
+                {
+                    return;
+                }
+
+                if (HighLogic.LoadedSceneIsEditor)
+                {
+                    var turrets = FindTurretsInEditor();
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.Log(e.StackTrace);
+                NextScan = Time.time + EditorScanInterval;
+                throw;
+            }
+            NextScan = Time.time + EditorScanInterval;
+            Debug.Log("Update");
         }
 
         public override void OnUpdate()
         {
-            if (HighLogic.LoadedSceneIsGame && vessel.IsControllable)
+            if (HighLogic.LoadedSceneIsFlight && vessel.IsControllable)
             {
                 if (Enabled != _oldEnabled)
                 {
@@ -109,6 +168,23 @@ namespace BetterGuards
             Debug.Log("Nextime: " + NextScan);
         }
 
+        public IEnumerable<string> FindTurretsInEditor()
+        {
+            var turrets = new Dictionary<string, BahaTurret.BahaTurret>();
+            foreach (Part p in EditorLogic.fetch.ship.parts)
+            {
+                var turret = p.FindModuleImplementing<BahaTurret.BahaTurret>();
+                if (turret != null)
+                {
+                    if (!turrets.ContainsKey(turret.name))
+                    {
+                        turrets.Add(turret.name, turret);
+                    }                    
+                }
+            }
+
+            return turrets.Keys;
+        }
 
         public void DoGuardJob()
         {
